@@ -1,0 +1,5 @@
+/Lib
+/Scripts
+/pyvenv.cfg
+/src/*.egg-info/
+__pycache__
