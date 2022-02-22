@@ -16,6 +16,9 @@ constituents. Parser Combinators and Token Parsers
 
 # Reification via Parser Combinators
 
+# THINKABOUT
+- for ranges we include the max specifier, i.e. [:4]
+  parses input 4, maybe allow up to 3 would be more expected?
 """
 
 
@@ -30,8 +33,8 @@ __all__ = [
 
 
 class ParseException(Exception):
-    def from_state(parser, query):
-        return ParseException('Expected %s. Query: %s' % (parser, query))
+    def from_state(parser, query, start):
+        return ParseException('Expected %s. Query: %s. Index: %s' % (parser, query, start))
 
 
 class _Parser(object):
@@ -75,9 +78,9 @@ class _Parser(object):
             return Repeat(self, i, i)
 
     def parse(self, query):
-        r, q = self._parse(query)
-        if len(q) != 0:
-            raise ParseException('Remaining query after parsing: %s' % q)
+        r, s = self._parse(query, 0)
+        if s != len(query):
+            raise ParseException('Remaining query after parsing: %s' % query[s:])
         return r
 
 
@@ -87,10 +90,10 @@ class Literal(_Parser):
     def __init__(self, lit):
         self._lit = lit
 
-    def _parse(self, query):
-        if query.startswith(self._lit):
-            return self._lit, query[len(self._lit):]
-        raise ParseException.from_state(self, query)
+    def _parse(self, query, start):
+        if query.startswith(self._lit, start):
+            return self._lit, start + len(self._lit)
+        raise ParseException.from_state(self, query, start)
 
     def __str__(self):
         return self._lit
@@ -103,27 +106,27 @@ class Regex(_Parser):
     def __init__(self, regex):
         self._regex = re.compile(regex)
 
-    def _parse(self, query):
-        match = self._regex.match(query)
+    def _parse(self, query, start):
+        match = self._regex.match(query, start)
         if not match:
-            raise ParseException.from_state(self, query)
+            raise ParseException.from_state(self, query, start)
 
         r = match.group(0)
-        q = query[len(r):]
+        s = start + len(r)
         if self._regex.groups == 0:
-            return r, q
-        return [g for g in match.groups()], q
+            return r, s
+        return [g for g in match.groups()], s
 
     def __str__(self):
         return '/%s/' % self._regex.pattern
 
 
 class Id(_Parser):
-    def __init__(self, p):
-        self._p = p
+    def __init__(self, parser):
+        self._p = Literal(parser) if isinstance(parser, str) else parser
 
-    def _parse(self, query):
-        return self._p._parse(query)
+    def _parse(self, query, start):
+        return self._p._parse(query, start)
 
     def __str__(self):
         return str(self._p)
@@ -134,9 +137,9 @@ class Map(_Parser):
         self._p = p
         self._fn = fn
 
-    def _parse(self, query):
-        r, q = self._p._parse(query)
-        return self._fn(r), q
+    def _parse(self, query, start):
+        r, s = self._p._parse(query, start)
+        return self._fn(r), s
 
     def __str__(self):
         return str(self._p)
@@ -146,8 +149,8 @@ class Drop(_Parser):
     def __init__(self, parser):
         self._p = Literal(parser) if isinstance(parser, str) else parser
 
-    def _parse(self, query):
-        return None, self._p._parse(query)[1]
+    def _parse(self, query, start):
+        return None, self._p._parse(query, start)[1]
 
     def __str__(self):
         return str(self._p)
@@ -155,21 +158,22 @@ class Drop(_Parser):
 
 class Repeat(_Parser):
     def __init__(self, parser, start, stop):
-        if start is not None and start < 0:
-            raise ValueError('start index < 0')
-        if stop is not None and stop < start:
-            raise ValueError('stop index < start index')
         self._p = parser
         self._start = start or 0
         self._stop = stop
 
-    def _parse(self, query):
+        if self._start < 0:
+            raise ValueError('start index < 0')
+        if self._stop is not None and self._stop < self._start:
+            raise ValueError('stop index < start index')
+
+    def _parse(self, query, start):
+        s = start  # Continue here!
         rs = []
-        q = query
         if self._start > 0:
             for i in range(0, self._start):
                 try:
-                    r, q = self._p._parse(q)
+                    r, s = self._p._parse(query, s)
                     rs.append(r)
                 except ParseException:
                     raise ParseException('Expected at least %s repetitions of %s'
@@ -178,16 +182,16 @@ class Repeat(_Parser):
         try:
             if self._stop is not None:
                 for i in range(0, self._stop - self._start):
-                    r, q = self._p._parse(q)
+                    r, s = self._p._parse(query, s)
                     rs.append(r)
             else:
                 while True:
-                    r, q = self._p._parse(q)
+                    r, s = self._p._parse(query, s)
                     rs.append(r)
         except ParseException:
             pass
 
-        return rs, q
+        return rs, s
 
     def __str__(self):
         if self._stop is None:
@@ -203,14 +207,14 @@ class Concat(_Parser):
     def __init__(self, ps):
         self._ps = ps
 
-    def _parse(self, query):
-        q = query
-        res = []
+    def _parse(self, query, start):
+        s = start
+        rs = []
         for p in self._ps:
-            r, q = p._parse(q)
+            r, s = p._parse(query, s)
             if r is not None:
-                res.append(r)
-        return res, q
+                rs.append(r)
+        return rs, s
 
     def __str__(self):
         ' + '.join(self._ps)
@@ -220,14 +224,14 @@ class Union(_Parser):
     def __init__(self, ps):
         self._ps = ps
 
-    def _parse(self, query):
+    def _parse(self, query, start):
         for p in self._ps:
             try:
-                return p._parse(query)
+                return p._parse(query, start)
             except ParseException:
                 pass
 
-        raise ParseException.from_state(self, query)
+        raise ParseException.from_state(self, query, start)
 
     def __str__(self):
         ' | '.join(self._ps)

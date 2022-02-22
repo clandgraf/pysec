@@ -15,17 +15,17 @@ class TestLiteral(unittest.TestCase):
         with self.assertRaises(pysec.ParseException):
             self.literal.parse('helloworld')
 
-    # def test_success(self):
-    #     lit, rest = self.literal._parse('helloworld')
-    #     self.assertEqual(lit, 'hello')
+    def test_success(self):
+        lit, rest = self.literal._parse('helloworld', 0)
+        self.assertEqual(lit, 'hello')
 
-    # def test_rest(self):
-    #     lit, rest = self.literal._parse('helloworld')
-    #     self.assertEqual(rest, 'world')
+    def test_rest(self):
+        lit, rest = self.literal._parse('helloworld', 0)
+        self.assertEqual(rest, 5)
 
-    # def test_failure(self):
-    #     with self.assertRaises(pysec.ParseException):
-    #         self.literal._parse('hiworld')
+    def test_failure(self):
+        with self.assertRaises(pysec.ParseException):
+            self.literal._parse('hiworld', 0)
 
 
 class TestRegex(unittest.TestCase):
@@ -70,6 +70,17 @@ class TestConcatReifies(unittest.TestCase):
     def test_success(self):
         result = self.grammar.parse('15.3.0-beta1')
         self.assertEqual(result, [['15', '3', '0'], 'beta1'])
+
+
+class TestConcatPreserve(unittest.TestCase):
+    def setUp(self):
+        g0 = pysec.Regex('[A-Za-z_][A-Za-z0-9_]*')
+        g1 = pysec.Regex(r'(\d+)\.(\d+)\.(\d+)')
+        self.grammar = g1 + pysec.Id('-') + g0
+
+    def test_success(self):
+        result = self.grammar.parse('15.3.0-beta1')
+        self.assertEqual(result, [['15', '3', '0'], '-', 'beta1'])
 
 
 class TestConcatRand(unittest.TestCase):
@@ -119,6 +130,57 @@ class TestMap(unittest.TestCase):
     def test_success_second_opt(self):
         result = self.grammar.parse('15.3.0')
         self.assertEqual(result, [15, 3, 0])
+
+
+class TestRepeat(unittest.TestCase):
+    def setUp(self):
+        self.g0 = pysec.Regex('foo')[2]
+        self.g1 = pysec.Regex('foo')[2:]
+        self.g2 = pysec.Regex('foo')[2:4]
+        self.g3 = pysec.Regex('foo')[:4]
+
+    def test_success_g0(self):
+        result = self.g0.parse('foofoo')
+        self.assertEqual(result, ['foo'] * 2)
+
+    def test_fail_less_g0(self):
+        with self.assertRaises(pysec.ParseException):
+            self.g0.parse('foo')
+
+    def test_fail_more_g0(self):
+        with self.assertRaises(pysec.ParseException):
+            self.g0.parse('foo' * 3)
+
+    def test_success_g1(self):
+        for i in range(2, 5):
+            result = self.g1.parse('foo' * i)
+            self.assertEqual(result, ['foo'] * i)
+
+    def test_fail_less_g1(self):
+        with self.assertRaises(pysec.ParseException):
+            self.g1.parse('foo')
+
+    def test_success_g2(self):
+        for i in range(2, 5):
+            result = self.g2.parse('foo' * i)
+            self.assertEqual(result, ['foo'] * i)
+
+    def test_fail_less_g2(self):
+        with self.assertRaises(pysec.ParseException):
+            self.g2.parse('foo')
+
+    def test_fail_more_g2(self):
+        with self.assertRaises(pysec.ParseException):
+            self.g2.parse('foo' * 5)
+
+    def test_success_g2(self):
+        for i in range(0, 5):
+            result = self.g3.parse('foo' * i)
+            self.assertEqual(result, ['foo'] * i)
+
+    def test_fail_more_g3(self):
+        with self.assertRaises(pysec.ParseException):
+            self.g3.parse('foo' * 5)
 
 
 class TestSelectorGrammar(unittest.TestCase):
