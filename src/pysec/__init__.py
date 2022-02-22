@@ -252,4 +252,4 @@ def Optional(pToken):
 
 
 def In(lsep, ptoken, rsep):
-    return Nth('[' + ptoken + ']', 0)
+    return Nth(lsep + ptoken + rsep, 0)
