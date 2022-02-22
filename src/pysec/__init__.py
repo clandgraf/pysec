@@ -1,5 +1,23 @@
 import re
 
+"""pysec provides entities to define recursive descent parsers inline
+in code. These entities follow a technique called parser combinators,
+inspired by the popular haskell module parsec.
+
+Parsers are either terminal parsers, that recognize single tokens or
+combined parsers that are constructed from other parsers.
+
+Each Parser transforms it's input into a data structure defined by its
+constituents. Parser Combinators and Token Parsers
+
+# Defining Lexicographic Tokens
+
+# Complex Grammars using Parser Combinators
+
+# Reification via Parser Combinators
+
+"""
+
 
 __all__ = [
     'ParseException',
@@ -29,7 +47,12 @@ class _Parser(object):
 
     def __or__(self, p):
         ps1 = self._ps if isinstance(self, Union) else [self]
-        ps2 = [Drop(p)] if isinstance(p, str) else p._ps if isinstance(p, Union) else [p]
+        ps2 = [Literal(p)] if isinstance(p, str) else p._ps if isinstance(p, Union) else [p]
+        return Union(ps1 + ps2)
+
+    def __ror__(self, p):
+        ps1 = [Literal(p)] if isinstance(p, str) else p._ps if isinstance(p, Union) else [p]
+        ps2 = self._ps if isinstance(self, Union) else [self]
         return Union(ps1 + ps2)
 
     def __rshift__(self, fn):
@@ -59,6 +82,8 @@ class _Parser(object):
 
 
 class Literal(_Parser):
+    """Create a parser that parses a constant string
+    """
     def __init__(self, lit):
         self._lit = lit
 
@@ -72,6 +97,9 @@ class Literal(_Parser):
 
 
 class Regex(_Parser):
+    """Create a parser that parses a set of strings defined by the
+    provided regex
+    """
     def __init__(self, regex):
         self._regex = re.compile(regex)
 
